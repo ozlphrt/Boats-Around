@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Condensed Search Bar Concepts</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0f172a;
+            color: white;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 60px;
+            align-items: center;
+            background-image: radial-gradient(#1e293b 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .row {
+            display: flex;
+            gap: 40px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .concept-container {
+            position: relative;
+            width: 380px;
+            height: 120px;
+            /* Reduced simulated height */
+            background: linear-gradient(to bottom, #0ea5e9, #1e40af);
+            /* Ocean bg */
+            border-radius: 12px;
+            border: 1px solid #334155;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+        }
+
+        .label {
+            text-align: center;
+            margin-top: 10px;
+            color: #94a3b8;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        /* --- Concept 1: The Expanding Pill --- */
+        .c1-wrapper {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(20, 20, 30, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 20px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            width: 40px;
+            /* Collapsed width */
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            color: #fff;
+        }
+
+        .c1-wrapper:hover {
+            width: 220px;
+        }
+
+        /* Expand on hover */
+        .c1-icon {
+            min-width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .c1-input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: white;
+            width: 140px;
+            margin-left: 0px;
+            font-size: 0.9rem;
+        }
+
+        /* --- Concept 2: Iconic Minimal --- */
+        .c2-wrapper {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .c2-btn {
+            width: 40px;
+            height: 40px;
+            background: rgba(20, 20, 30, 0.6);
+            backdrop-filter: blur(8px);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        .c2-input-box {
+            background: rgba(20, 20, 30, 0.6);
+            backdrop-filter: blur(8px);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            height: 40px;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            color: white;
+            font-size: 0.9rem;
+            width: 140px;
+        }
+
+        /* --- Concept 3: Compact Glass Bar (Refined Current) --- */
+        .c3-wrapper {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+        }
+
+        .c3-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: white;
+            font-size: 0.85rem;
+        }
+
+        /* --- Concept 4: Floating Action Button (FAB) + Modal --- */
+        .c4-fab {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            background: #3b82f6;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.5);
+            color: white;
+            font-weight: bold;
+        }
+
+        /* Simulating "Search" text on map for context */
+        .c4-context {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            color: #aaa;
+        }
+
+        /* --- Concept 5: Single Line Integrated --- */
+        .c5-wrapper {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: transparent;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.5);
+            display: flex;
+            align-items: center;
+            padding-bottom: 4px;
+            width: 200px;
+        }
+
+        .c5-input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: white;
+            font-size: 1rem;
+            width: 100%;
+        }
+
+        svg {
+            width: 20px;
+            height: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="row">
+        <!-- 1 -->
+        <div>
+            <div class="concept-container">
+                <div class="c1-wrapper">
+                    <div class="c1-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                        </svg>
+                    </div>
+                    <input class="c1-input" placeholder="Search...">
+                    <div class="c1-icon" style="min-width: 30px; color: #60a5fa;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <circle cx="12" cy="12" r="2" />
+                            <line x1="12" y1="2" x2="12" y2="6" />
+                            <line x1="12" y1="18" x2="12" y2="22" />
+                            <line x1="2" y1="12" x2="6" y2="12" />
+                            <line x1="18" y1="12" x2="22" y2="12" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            <div class="label">1. Expanding Pill (Hover to Search)</div>
+        </div>
+
+        <!-- 2 -->
+        <div>
+            <div class="concept-container">
+                <div class="c2-wrapper">
+                    <div class="c2-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <circle cx="12" cy="12" r="2" />
+                        </svg>
+                    </div>
+                    <div class="c2-input-box">
+                        <input style="background:transparent; border:none; outline:none; color:white; width: 100%;"
+                            placeholder="Search...">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            <div class="label">2. Split Minimal</div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 3 -->
+        <div>
+            <div class="concept-container">
+                <div class="c3-wrapper">
+                    <input class="c3-input" placeholder="Search..." value="Singapore">
+                    <svg style="color: #60a5fa; margin-left: 8px;" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <circle cx="12" cy="12" r="2" />
+                        <line x1="12" y1="2" x2="12" y2="6" />
+                        <line x1="12" y1="18" x2="12" y2="22" />
+                        <line x1="2" y1="12" x2="6" y2="12" />
+                        <line x1="18" y1="12" x2="22" y2="12" />
+                    </svg>
+                </div>
+            </div>
+            <div class="label">3. Compact Glass Strip (Reduced Height/Padding)</div>
+        </div>
+
+        <!-- 4 -->
+        <div>
+            <div class="concept-container">
+                <div class="c4-context">INFO OVERLAY</div>
+                <div class="c4-fab">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8" />
+                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                </div>
+            </div>
+            <div class="label">4. Floating Action Button (No Input Visible)</div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 5 -->
+        <div>
+            <div class="concept-container">
+                <div class="c5-wrapper">
+                    <input class="c5-input" placeholder="Search...">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8" />
+                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                </div>
+            </div>
+            <div class="label">5. Transparent Line</div>
+        </div>
+    </div>
+
+</body>
+
+</html>

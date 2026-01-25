@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Icon Options</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #0f172a;
+            color: white;
+            padding: 40px;
+            display: flex;
+            gap: 40px;
+            justify-content: center;
+        }
+
+        .option-card {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 16px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .option-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .label {
+            margin-top: 10px;
+            display: block;
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+
+        svg {
+            color: #3b82f6;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Option 1: Precision Target -->
+    <div class="option-card">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="2" x2="12" y2="6"></line>
+            <line x1="12" y1="18" x2="12" y2="22"></line>
+            <line x1="2" y1="12" x2="6" y2="12"></line>
+            <line x1="18" y1="12" x2="22" y2="12"></line>
+            <circle cx="12" cy="12" r="2"></circle>
+        </svg>
+        <span class="label">Option 1: Precision Target</span>
+    </div>
+
+    <!-- Option 2: Nav Arrow -->
+    <div class="option-card">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+        </svg>
+        <span class="label">Option 2: Nav Arrow</span>
+    </div>
+
+    <!-- Option 3: Pin Point -->
+    <div class="option-card">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path
+                d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0">
+            </path>
+            <circle cx="12" cy="10" r="3"></circle>
+        </svg>
+        <span class="label">Option 3: Pin Point</span>
+    </div>
+
+    <!-- Option 4: Material Target (Current) -->
+    <div class="option-card">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="1" x2="12" y2="23"></line>
+            <line x1="1" y1="12" x2="23" y2="12"></line>
+            <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+        <span class="label">Option 4: Crosshair (Current)</span>
+    </div>
+
+</body>
+
+</html>
