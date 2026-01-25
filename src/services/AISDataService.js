@@ -37,10 +37,22 @@ export class AISDataService {
         this.lastConnectAttempt = now;
 
         this.onMessage = onMessage;
-        console.log(`[AIS] Opening WebSocket via Vite Proxy... (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
-
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const socketUrl = `${protocol}//${window.location.host}/api/socket`;
+        
+        // Detect production environment (GitHub Pages or Vite production build)
+        const isProduction = import.meta.env.PROD || window.location.hostname.includes('github.io');
+        const AIS_STREAM_URL = 'wss://stream.aisstream.io/v0/stream';
+        
+        let socketUrl;
+        if (isProduction) {
+            // Production: Connect directly to AISStream
+            socketUrl = AIS_STREAM_URL;
+            console.log(`[AIS] Opening WebSocket (Direct to AISStream)... (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+        } else {
+            // Development: Use Vite proxy
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            socketUrl = `${protocol}//${window.location.host}/api/socket`;
+            console.log(`[AIS] Opening WebSocket via Vite Proxy... (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+        }
         
         try {
             this.socket = new WebSocket(socketUrl);
@@ -124,9 +136,14 @@ export class AISDataService {
             if (event.code === 4002) errorMsg = "Err: Bad Request (4002)";
             if (event.code === 4003) errorMsg = "Err: Rate Limited (4003)";
             if (event.code === 1006) {
-                errorMsg = "Err: Connection Dropped"; // Abnormal - likely proxy server not running
+                errorMsg = "Err: Connection Dropped"; // Abnormal - connection failed
+                const isProduction = import.meta.env.PROD || window.location.hostname.includes('github.io');
                 if (this.onStatusChange) {
-                    this.onStatusChange("Proxy server not running. Run: npm run start:proxy");
+                    if (isProduction) {
+                        this.onStatusChange("Connection failed - Check API key");
+                    } else {
+                        this.onStatusChange("Proxy server not running. Run: npm run start:proxy");
+                    }
                 }
             } else {
                 if (this.onStatusChange) {
@@ -143,9 +160,13 @@ export class AISDataService {
         this.socket.onerror = (error) => {
             console.error("WebSocket Error:", error);
             // Don't overwrite if onclose handles it better (often error comes before close)
-            // Error 1006 typically means connection failed - proxy server likely not running
+            const isProduction = import.meta.env.PROD || window.location.hostname.includes('github.io');
             if (this.onStatusChange && !this.isConnected) {
-                this.onStatusChange("Socket Error - Check proxy server");
+                if (isProduction) {
+                    this.onStatusChange("Socket Error - Check API key");
+                } else {
+                    this.onStatusChange("Socket Error - Check proxy server");
+                }
             }
         };
     }
