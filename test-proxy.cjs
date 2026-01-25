@@ -1,25 +1,25 @@
 const WebSocket = require('ws');
 
 const API_KEY = "a73d7123681f15fa8d4ff6ff4123bb391fd3845a";
-const url = "wss://stream.aisstream.io/v0/stream";
+const url = "ws://localhost:3001";
 
-console.log(`Testing connection to ${url}...`);
+console.log(`Testing connection to local proxy ${url}...`);
 const ws = new WebSocket(url);
 
 ws.on('open', () => {
-    console.log("Connected!");
+    console.log("Connected to proxy!");
     const sub = {
         APIKey: API_KEY,
         BoundingBoxes: [[[-90, -180], [90, 180]]], // Global
-        FilterMessageTypes: ["PositionReport", "ShipStaticData"]
+        FilterMessageTypes: ["PositionReport"]
     };
-    console.log("Sending subscription...");
+    console.log("Sending subscription to proxy...");
     ws.send(JSON.stringify(sub));
 });
 
 ws.on('message', (data) => {
     const msg = JSON.parse(data);
-    console.log("Full Message Structure:", JSON.stringify(msg, null, 2));
+    console.log("Received data type from proxy:", msg.MessageType);
     console.log("Success! Closing.");
     ws.close();
 });
@@ -29,5 +29,5 @@ ws.on('close', (code, reason) => {
 });
 
 ws.on('error', (err) => {
-    console.error("Error:", err.message);
+    console.error("Error connecting to proxy:", err.message);
 });

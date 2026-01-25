@@ -82,7 +82,7 @@ export class DigitrafficService {
                 return {
                     MetaData: {
                         MMSI: props.mmsi,
-                        ShipName: `Vessel ${props.mmsi}`
+                        ShipName: `Vessel ${props.mmsi}`.trim()
                     },
                     Message: {
                         PositionReport: {

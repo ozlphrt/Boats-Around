@@ -62,25 +62,31 @@ const BoatInfoPanel = ({ boat, onClose }) => {
         }
     };
 
-    const name = boat.MetaData?.ShipName || boat.static?.Name || `Unknown Vessel (${boat.MetaData?.MMSI})`;
+    const mmsi = boat.MetaData?.MMSI || boat.static?.Mmsi || 'Unknown';
+    const name = boat.MetaData?.ShipName || boat.static?.Name || `Unknown Vessel (${mmsi})`;
     const type = boat.static?.Type || 'Unknown';
     const destination = boat.static?.Destination || 'Unknown';
-    const sog = boat.Message?.PositionReport?.Sog ? `${boat.Message.PositionReport.Sog} kn` : '-';
-    const cog = boat.Message?.PositionReport?.Cog ? `${boat.Message.PositionReport.Cog}°` : '-';
-    const lat = boat.Message?.PositionReport?.Latitude?.toFixed(4);
-    const lon = boat.Message?.PositionReport?.Longitude?.toFixed(4);
+    const sog = boat.Message?.PositionReport?.Sog !== undefined ? `${boat.Message.PositionReport.Sog} kn` : '-';
+    const cog = boat.Message?.PositionReport?.Cog !== undefined ? `${boat.Message.PositionReport.Cog}°` : '-';
+    const lat = boat.Message?.PositionReport?.Latitude?.toFixed(4) || '-';
+    const lon = boat.Message?.PositionReport?.Longitude?.toFixed(4) || '-';
 
     return (
         <div style={styles.panel}>
             <div style={styles.header}>
                 <h2 style={styles.title}>{name}</h2>
-                <button style={styles.closeBtn} onClick={onClose}>&times;</button>
+                <button style={styles.closeBtn} onClick={onClose} aria-label="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
             </div>
 
             <div style={styles.grid}>
                 <div>
                     <div style={styles.label}>DESTINATION</div>
-                    <div style={styles.value}>{destination}</div>
+                    <div style={styles.value} title={destination}>{destination}</div>
                 </div>
                 <div>
                     <div style={styles.label}>TYPE</div>
@@ -100,7 +106,7 @@ const BoatInfoPanel = ({ boat, onClose }) => {
                 </div>
                 <div>
                     <div style={styles.label}>MMSI</div>
-                    <div style={styles.value}>{boat.MetaData.MMSI}</div>
+                    <div style={styles.value}>{mmsi}</div>
                 </div>
             </div>
         </div>

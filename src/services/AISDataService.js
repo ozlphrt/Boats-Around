@@ -7,24 +7,57 @@ export class AISDataService {
         this.isConnected = false;
         this.pendingBoundingBox = null;
         this.connectTimeout = null;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 10;
+        this.reconnectDelay = 1000; // Start with 1 second
+        this.maxReconnectDelay = 30000; // Max 30 seconds
+        this.reconnectTimer = null;
+        this.lastConnectAttempt = null;
+        this.isManuallyDisconnected = false;
     }
 
-    connect(onMessage, onStatusChange) {
+    connect(onMessage, onStatusChange, isScheduledReconnect = false) {
+        if (this.isManuallyDisconnected) {
+            console.log("[AIS] Manually disconnected, not auto-reconnecting.");
+            return;
+        }
+
         if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
             console.log("[AIS] Socket already active.");
             return;
         }
 
+        // Only throttle if there's a recent connection attempt AND it's not a scheduled reconnect
+        // (scheduled reconnects should bypass throttle since they're intentional)
+        const now = Date.now();
+        if (!isScheduledReconnect && this.lastConnectAttempt && (now - this.lastConnectAttempt < 2000)) {
+            console.log("[AIS] Connection attempt throttled.");
+            return;
+        }
+        this.lastConnectAttempt = now;
+
         this.onMessage = onMessage;
-        console.log("[AIS] Opening WebSocket...");
-        // Use custom local relay server
-        this.socket = new WebSocket("ws://localhost:3000");
+        console.log(`[AIS] Opening WebSocket via Vite Proxy... (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const socketUrl = `${protocol}//${window.location.host}/api/socket`;
+        
+        try {
+            this.socket = new WebSocket(socketUrl);
+        } catch (error) {
+            console.error("[AIS] Failed to create WebSocket:", error);
+            this.scheduleReconnect(onMessage, onStatusChange);
+            return;
+        }
 
         // WATCHDOG: If not connected in 15 seconds, retry.
         this.connectTimeout = setTimeout(() => {
             if (this.socket && this.socket.readyState !== WebSocket.OPEN) {
                 console.warn("[AIS] Connection timed out (stuck in handshaking). Retrying...");
-                this.socket.close();
+                if (this.socket) {
+                    this.socket.close();
+                }
+                this.scheduleReconnect(onMessage, onStatusChange);
             }
         }, 15000);
 
@@ -32,6 +65,12 @@ export class AISDataService {
             console.log("[AIS] WebSocket Connected");
             clearTimeout(this.connectTimeout);
             this.isConnected = true;
+            this.reconnectAttempts = 0; // Reset on successful connection
+            this.reconnectDelay = 1000; // Reset delay
+            if (this.reconnectTimer) {
+                clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = null;
+            }
             if (this.onStatusChange) this.onStatusChange("Connected");
 
             if (this.pendingBoundingBox) {
@@ -49,7 +88,15 @@ export class AISDataService {
 
                 const response = JSON.parse(data);
                 if (response.MessageType === "PositionReport" || response.MessageType === "ShipStaticData") {
+                    console.log(`[AIS] ✓ Received ${response.MessageType} for ${response.MetaData.MMSI}`);
                     if (this.onMessage) this.onMessage(response);
+                } else if (response.error) {
+                    console.error('[AIS] ❌ Error from AISStream:', response.error);
+                    if (this.onStatusChange) {
+                        this.onStatusChange(`Error: ${response.error}`);
+                    }
+                } else {
+                    console.log('[AIS] Received message:', response.MessageType || 'Unknown');
                 }
             } catch (e) {
                 console.error("Error parsing AIS message", e);
@@ -59,6 +106,7 @@ export class AISDataService {
         this.socket.onclose = (event) => {
             console.log(`[AIS] WebSocket Closed. Code: ${event.code}, Reason: ${event.reason}`);
             this.isConnected = false;
+            clearTimeout(this.connectTimeout);
 
             // Known AISStream Error Codes
             // 4001: Invalid API Key
@@ -67,21 +115,65 @@ export class AISDataService {
             // 4004: Subscription validation error
             let errorMsg = `Disconnected (${event.code})`;
 
-            if (event.code === 4001) errorMsg = "Err: Invalid API Key";
+            if (event.code === 4001) {
+                errorMsg = "Err: Invalid API Key";
+                // Don't retry on auth errors
+                if (this.onStatusChange) this.onStatusChange(errorMsg);
+                return;
+            }
             if (event.code === 4002) errorMsg = "Err: Bad Request (4002)";
             if (event.code === 4003) errorMsg = "Err: Rate Limited (4003)";
-            if (event.code === 1006) errorMsg = "Err: Connection Dropped"; // Abnormal
+            if (event.code === 1006) {
+                errorMsg = "Err: Connection Dropped"; // Abnormal - likely proxy server not running
+                if (this.onStatusChange) {
+                    this.onStatusChange("Proxy server not running. Run: npm run start:proxy");
+                }
+            } else {
+                if (this.onStatusChange) {
+                    this.onStatusChange(errorMsg);
+                }
+            }
 
-            if (this.onStatusChange) {
-                this.onStatusChange(errorMsg);
+            // Auto-reconnect with exponential backoff (unless manually disconnected or auth error)
+            if (!this.isManuallyDisconnected && event.code !== 4001 && event.code !== 1000) {
+                this.scheduleReconnect(onMessage, onStatusChange);
             }
         };
 
         this.socket.onerror = (error) => {
             console.error("WebSocket Error:", error);
             // Don't overwrite if onclose handles it better (often error comes before close)
-            if (this.onStatusChange) this.onStatusChange("Socket Error");
+            // Error 1006 typically means connection failed - proxy server likely not running
+            if (this.onStatusChange && !this.isConnected) {
+                this.onStatusChange("Socket Error - Check proxy server");
+            }
         };
+    }
+
+    scheduleReconnect(onMessage, onStatusChange) {
+        if (this.isManuallyDisconnected) return;
+        
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            console.error(`[AIS] Max reconnect attempts (${this.maxReconnectAttempts}) reached. Stopping.`);
+            if (this.onStatusChange) {
+                this.onStatusChange(`Connection failed after ${this.maxReconnectAttempts} attempts`);
+            }
+            return;
+        }
+
+        this.reconnectAttempts++;
+        const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), this.maxReconnectDelay);
+        
+        console.log(`[AIS] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        
+        if (this.onStatusChange) {
+            this.onStatusChange(`Reconnecting... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        }
+
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.connect(onMessage, onStatusChange, true); // Pass true to indicate scheduled reconnect
+        }, delay);
     }
 
     updateSettings(boundingBox) {
@@ -90,10 +182,10 @@ export class AISDataService {
         if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
             console.log("[AIS] Socket not ready. Subscription queued for when open.");
 
-            // Auto-reconnect if socket is dead/null
-            if (!this.socket || this.socket.readyState === WebSocket.CLOSED) {
+            // Auto-reconnect if socket is dead/null (but respect manual disconnect)
+            if (!this.isManuallyDisconnected && (!this.socket || this.socket.readyState === WebSocket.CLOSED)) {
                 const now = Date.now();
-                if (this.lastConnectAttempt && (now - this.lastConnectAttempt < 5000)) {
+                if (this.lastConnectAttempt && (now - this.lastConnectAttempt < 2000)) {
                     console.log("[AIS] Reconnect throttled. Waiting...");
                     return;
                 }
@@ -116,15 +208,32 @@ export class AISDataService {
         };
 
         console.log("[AIS] Sending/Updating Subscription...");
+        console.log(`[AIS] BBox: [${boundingBox.south.toFixed(2)}, ${boundingBox.west.toFixed(2)}] to [${boundingBox.north.toFixed(2)}, ${boundingBox.east.toFixed(2)}]`);
+        console.log(`[AIS] API Key: ${this.apiKey ? (this.apiKey.substring(0, 8) + '...') : 'MISSING'}`);
+        
+        if (!this.apiKey || this.apiKey === 'undefined' || this.apiKey === 'null') {
+            console.error('[AIS] ⚠️ API KEY IS MISSING! Set VITE_AISSTREAM_API_KEY in .env file');
+            if (this.onStatusChange) {
+                this.onStatusChange('Missing API Key - Check .env');
+            }
+        }
+        
         this.socket.send(JSON.stringify(subscriptionMessage));
     }
 
     disconnect() {
+        this.isManuallyDisconnected = true;
         if (this.connectTimeout) clearTimeout(this.connectTimeout);
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
         if (this.socket) {
             this.socket.close(1000, "App Unmount");
             this.socket = null;
             this.isConnected = false;
         }
+        this.reconnectAttempts = 0;
+        this.reconnectDelay = 1000;
     }
 }

@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const { createServer } = require('http');
 
-const PORT = 3000;
+const PORT = 3001;
 const API_URL = "wss://stream.aisstream.io/v0/stream";
 
 const server = createServer();
@@ -18,12 +18,13 @@ wss.on('connection', (clientWs) => {
 
     upstreamWs.on('message', (data) => {
         if (clientWs.readyState === WebSocket.OPEN) {
+            // console.log("Forwarding message from upstream to client"); // Too noisy
             clientWs.send(data);
         }
     });
 
     upstreamWs.on('close', (code, reason) => {
-        console.log(`Upstream closed: ${code}`);
+        console.log(`Upstream closed: ${code} - ${reason}`);
         clientWs.close(code, reason);
     });
 
@@ -33,13 +34,13 @@ wss.on('connection', (clientWs) => {
     });
 
     clientWs.on('message', (data) => {
+        console.log("Received message from client:", data.toString());
         // Forward subscription messages from client to upstream
         if (upstreamWs.readyState === WebSocket.OPEN) {
             console.log("Forwarding message to upstream");
             upstreamWs.send(data);
         } else {
-            // Queue or wait? For now simple: if not open, we can't send.
-            // Usually client sends immediately.
+            console.log("Upstream not ready, queuing message");
             upstreamWs.once('open', () => {
                 console.log("Forwarding queued message");
                 upstreamWs.send(data);

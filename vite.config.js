@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: '/Boats-Around/',
+  base: './',
   plugins: [
     react(),
     cesium(),
@@ -40,10 +40,10 @@ export default defineConfig({
   server: {
     proxy: {
       '/api/socket': {
-        target: 'wss://stream.aisstream.io',
+        target: 'http://localhost:3001',
         ws: true,
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/socket/, '/v0/stream')
+        rewrite: (path) => path.replace(/^\/api\/socket/, '/')
       }
     }
   }

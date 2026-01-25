@@ -1,21 +1,61 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
-const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch }) => {
+const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch, locationPermissionRequested, onRequestLocation, enabledVesselTypes, onToggleVesselType, showLabels, onToggleLabels }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showApiDetails, setShowApiDetails] = useState(false);
+    const [showLegend, setShowLegend] = useState(false);
+    const legendTimerRef = useRef(null);
 
     const handleApiClick = () => {
         setShowApiDetails(true);
         setTimeout(() => setShowApiDetails(false), 3000);
     };
 
+    const handleLegendClick = () => {
+        // Clear any existing timer
+        if (legendTimerRef.current) {
+            clearTimeout(legendTimerRef.current);
+        }
+        
+        // Show legend
+        setShowLegend(true);
+        
+        // Auto-hide after 5 seconds
+        legendTimerRef.current = setTimeout(() => {
+            setShowLegend(false);
+            legendTimerRef.current = null;
+        }, 5000);
+    };
+
+    // Cleanup timer on unmount
+    useEffect(() => {
+        return () => {
+            if (legendTimerRef.current) {
+                clearTimeout(legendTimerRef.current);
+            }
+        };
+    }, []);
+
     // --- Status Color Logic ---
     const getStatusColor = () => {
         if (connectionStatus.startsWith('Connected')) return '#4ade80'; // Green
         if (connectionStatus.startsWith('Locating') || connectionStatus.startsWith('Connecting') || connectionStatus === 'Initializing') return '#fbbf24'; // Yellow
-        return '#f87171'; // Red
+        if (connectionStatus.includes('Err:') || connectionStatus.includes('Failed') || connectionStatus.includes('Dropped')) return '#f87171'; // Red
+        if (connectionStatus.includes('Missing') || connectionStatus.includes('not running')) return '#f87171'; // Red
+        return '#fbbf24'; // Default to yellow
     };
     const statusColor = getStatusColor();
+    
+    // Enhanced status message for better UX
+    const getStatusMessage = () => {
+        if (connectionStatus.includes('Err: Connection Dropped') || connectionStatus.includes('Socket Error')) {
+            return 'Proxy server not running. Run: npm run start:proxy';
+        }
+        if (connectionStatus.includes('Missing API Key')) {
+            return 'Set VITE_AISSTREAM_API_KEY in .env';
+        }
+        return connectionStatus;
+    };
 
     const styles = {
         // Root container - allows clicking through to map
@@ -116,6 +156,79 @@ const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch }) => {
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center'
+        },
+        // --- Legend ---
+        legendContainer: {
+            position: 'absolute',
+            bottom: '30px',
+            right: '20px',
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '16px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            pointerEvents: 'auto',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.2)'
+        },
+        legendItem: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+        },
+        legendColor: {
+            width: '10px',
+            height: '10px',
+            borderRadius: '2px'
+        },
+        legendText: {
+            color: 'white',
+            fontSize: '0.75rem',
+            fontWeight: '600',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            letterSpacing: '0.5px'
+        },
+        // --- Info Icon Button ---
+        infoIconBtn: {
+            width: '44px',
+            height: '44px',
+            borderRadius: '12px',
+            backgroundColor: 'rgba(20, 20, 30, 0.6)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.2)',
+            transition: 'transform 0.2s, background 0.2s'
+        },
+        // --- Toggle Checkbox ---
+        toggleContainer: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            userSelect: 'none'
+        },
+        checkbox: {
+            width: '16px',
+            height: '16px',
+            borderRadius: '4px',
+            border: '2px solid rgba(255, 255, 255, 0.3)',
+            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.2s'
+        },
+        checkboxChecked: {
+            backgroundColor: 'rgba(255, 255, 255, 0.3)',
+            border: '2px solid rgba(255, 255, 255, 0.5)'
         }
     };
 
@@ -133,8 +246,8 @@ const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch }) => {
                 {/* GPS Button */}
                 <button
                     style={styles.gpsBtn}
-                    onClick={onRecenter}
-                    title="Locate Me"
+                    onClick={locationPermissionRequested ? onRecenter : onRequestLocation}
+                    title={locationPermissionRequested ? "Locate Me" : "Enable Location"}
                 >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
@@ -164,11 +277,11 @@ const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch }) => {
             <div style={styles.bottomLeftContainer}>
                 <div
                     style={{ ...styles.statusPill, cursor: 'pointer' }}
-                    title={connectionStatus}
+                    title={getStatusMessage()}
                     onClick={handleApiClick}
                 >
                     {showApiDetails ? (
-                        <span style={styles.statusText}>{connectionStatus}</span>
+                        <span style={styles.statusText}>{getStatusMessage()}</span>
                     ) : (
                         <>
                             <div style={styles.statusIcon}>
@@ -186,6 +299,84 @@ const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch }) => {
                     )}
                 </div>
             </div>
+
+            {/* Bottom Right: Legend or Info Icon */}
+            {showLegend ? (
+                <div style={styles.legendContainer}>
+                    {/* Vessel Labels Toggle */}
+                    <div 
+                        style={styles.toggleContainer}
+                        onClick={() => onToggleLabels(!showLabels)}
+                    >
+                        <div style={{
+                            ...styles.checkbox,
+                            ...(showLabels ? styles.checkboxChecked : {})
+                        }}>
+                            {showLabels && (
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                            )}
+                        </div>
+                        <span style={styles.legendText}>Vessel Labels</span>
+                    </div>
+                    
+                    {/* Separator */}
+                    <div style={{ height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }}></div>
+                    
+                    {/* Vessel Type Toggles */}
+                    {[
+                        { label: 'Cargo', color: '#90EE90' }, // LIGHTGREEN
+                        { label: 'Tanker', color: '#CD5C5C' }, // INDIANRED
+                        { label: 'Passenger', color: '#87CEEB' }, // SKYBLUE
+                        { label: 'Fishing', color: '#FFA500' }, // ORANGE
+                        { label: 'Pleasure', color: '#FF00FF' }, // MAGENTA
+                        { label: 'Other', color: '#FFFFFF' }   // WHITE
+                    ].map((item) => {
+                        const isEnabled = enabledVesselTypes[item.label] !== false;
+                        return (
+                            <div 
+                                key={item.label} 
+                                style={styles.toggleContainer}
+                                onClick={() => {
+                                    onToggleVesselType(prev => ({
+                                        ...prev,
+                                        [item.label]: !isEnabled
+                                    }));
+                                }}
+                            >
+                                <div style={{
+                                    ...styles.checkbox,
+                                    ...(isEnabled ? styles.checkboxChecked : {})
+                                }}>
+                                    {isEnabled && (
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                            <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                    )}
+                                </div>
+                                <div style={styles.legendItem}>
+                                    <div style={{ ...styles.legendColor, backgroundColor: item.color, opacity: isEnabled ? 1 : 0.3 }} />
+                                    <span style={{ ...styles.legendText, opacity: isEnabled ? 1 : 0.5 }}>{item.label}</span>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            ) : (
+                <div style={{ position: 'absolute', bottom: '30px', right: '20px', pointerEvents: 'auto' }}>
+                    <button
+                        style={styles.infoIconBtn}
+                        onClick={handleLegendClick}
+                        title="Show settings"
+                    >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
