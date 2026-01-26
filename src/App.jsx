@@ -5,8 +5,15 @@ import BoatInfoPanel from './components/UI/BoatInfoPanel';
 import { LocationService } from './services/LocationService';
 import { AISDataService } from './services/AISDataService';
 
+// Default location fallback (English Channel - busy maritime area)
+const DEFAULT_LOCATION = {
+  lat: 50.5,
+  lon: 0.5,
+  heading: 0
+};
+
 function App() {
-  const [userLocation, setUserLocation] = useState(null);
+  const [userLocation, setUserLocation] = useState(DEFAULT_LOCATION);
   const [boats, setBoats] = useState([]);
   const [connectionStatus, setConnectionStatus] = useState('Initializing');
   const [selectedBoat, setSelectedBoat] = useState(null);
@@ -17,6 +24,9 @@ function App() {
     Cargo: true,
     Tanker: true,
     Passenger: true,
+    'High Speed': true,
+    Tug: true,
+    Special: true,
     Fishing: true,
     Pleasure: true,
     Other: true
@@ -33,12 +43,6 @@ function App() {
     isTrackingUserRef.current = isTrackingUser;
   }, [isTrackingUser]);
 
-  // Default location fallback (English Channel - busy maritime area)
-  const DEFAULT_LOCATION = {
-    lat: 50.5,
-    lon: 0.5,
-    heading: 0
-  };
 
   // 1. Initialize Services (One-time setup)
   useEffect(() => {
@@ -59,7 +63,8 @@ function App() {
     };
   }, []); // Run once on mount
 
-  // 1.5. Auto-request GPS location on app start
+  // 1.5. Auto-request GPS location removed to comply with browser policy
+  // Users must now trigger this via the "Enable Location" button
   useEffect(() => {
     // Small delay to ensure viewer is ready
     const timer = setTimeout(() => {
@@ -96,7 +101,8 @@ function App() {
 
     console.log(`[App] 📍 Location: ${userLocation.lat.toFixed(4)}, ${userLocation.lon.toFixed(4)}`);
     console.log(`[App] 🗺️ Subscribing to ${(variance * 111).toFixed(0)}km radius`);
-    aisServiceRef.current.updateSettings(bbox);
+
+    if (aisServiceRef.current) aisServiceRef.current.updateSettings(bbox);
 
   }, [userLocation]);
 
@@ -127,14 +133,17 @@ function App() {
           updatedBoats[index] = {
             ...existingBoat,
             Message: { ...existingBoat.Message, PositionReport: msg.Message.PositionReport },
-            MetaData: shipName ? { ...msg.MetaData, ShipName: shipName } : msg.MetaData
+            MetaData: shipName ? { ...msg.MetaData, ShipName: shipName } : msg.MetaData,
+            lastUpdate: Date.now()
           };
         } else if (msg.MessageType === "ShipStaticData") {
           const shipName = msg.Message.ShipStaticData?.Name?.trim();
+          console.log(`[App] ℹ️ Static Data for ${mmsi}:`, msg.Message.ShipStaticData); // DEBUG LOG
           updatedBoats[index] = {
             ...existingBoat,
             static: { ...msg.Message.ShipStaticData, Name: shipName },
-            MetaData: shipName ? { ...existingBoat.MetaData, ShipName: shipName } : existingBoat.MetaData
+            MetaData: shipName ? { ...existingBoat.MetaData, ShipName: shipName } : existingBoat.MetaData,
+            lastUpdate: Date.now()
           };
         }
       } else {
@@ -143,7 +152,8 @@ function App() {
           const shipName = msg.MetaData?.ShipName?.trim();
           updatedBoats.push({
             ...msg,
-            MetaData: { ...msg.MetaData, ShipName: shipName || `Vessel ${mmsi}` }
+            MetaData: { ...msg.MetaData, ShipName: shipName || `Vessel ${mmsi}` },
+            lastUpdate: Date.now()
           });
         } else if (msg.MessageType === "ShipStaticData") {
           const mmsi = msg.MetaData?.MMSI;
@@ -151,12 +161,24 @@ function App() {
           updatedBoats.push({
             MetaData: { ...msg.MetaData, ShipName: shipName || `Vessel ${mmsi}` },
             Message: { PositionReport: { Latitude: 0, Longitude: 0, Sog: 0 } },
-            static: { ...msg.Message.ShipStaticData, Name: shipName }
+            static: { ...msg.Message.ShipStaticData, Name: shipName },
+            lastUpdate: Date.now()
           });
         }
       }
 
-      if (updatedBoats.length !== prevBoats.length) {
+      // Periodically prune state if it exceeds 2000 vessels
+      // (This prevents memory bloat when panning around large areas)
+      if (updatedBoats.length > 2000) {
+        // Only prune once every 100 additions to avoid constant sorting
+        if (updatedBoats.length % 100 === 0) {
+          console.log(`[App] Pruning state... (${updatedBoats.length} -> 1500)`);
+          updatedBoats.sort((a, b) => (b.lastUpdate || 0) - (a.lastUpdate || 0));
+          return updatedBoats.slice(0, 1500);
+        }
+      }
+
+      if (updatedBoats.length !== prevBoats.length && updatedBoats.length % 50 === 0) {
         console.log(`[App] 🚢 Boat count: ${updatedBoats.length} (${updatedBoats.length > prevBoats.length ? '+' : ''}${updatedBoats.length - prevBoats.length})`);
       }
       return updatedBoats;
@@ -168,15 +190,15 @@ function App() {
   // 4. GPS Location - Auto-request on startup, fallback to default if denied
   const requestLocationPermission = () => {
     if (locationPermissionRequested) return; // Already requested
-    
+
     setLocationPermissionRequested(true);
     setConnectionStatus('Locating GPS...');
-    
+
     LocationService.getCurrentLocation(
-      (loc) => { 
-        setUserLocation(loc); 
+      (loc) => {
+        setUserLocation(loc);
         setConnectionStatus('GPS Located');
-        
+
         // Start watching location after successful initial request
         locationWatchId.current = LocationService.watchLocation((loc) => {
           // Only update userLocation & trigger recenter if we are in tracking mode
@@ -212,7 +234,7 @@ function App() {
       requestLocationPermission();
       return;
     }
-    
+
     setConnectionStatus('Locating GPS...');
     setIsTrackingUser(true); // Re-enable tracking
     LocationService.getCurrentLocation(
@@ -261,7 +283,9 @@ function App() {
       <GlobeViewer
         userLocation={userLocation}
         boats={boats}
+        selectedBoat={selectedBoat}
         onSelectBoat={setSelectedBoat}
+        onLocationUpdate={setUserLocation}
         recenterTrigger={recenterTrigger}
         enabledVesselTypes={enabledVesselTypes}
         showLabels={showLabels}

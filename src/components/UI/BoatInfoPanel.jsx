@@ -1,4 +1,4 @@
-import React from 'react';
+import { getVesselDescription, getNavigationalStatus } from '../../utils/vesselUtils';
 
 const BoatInfoPanel = ({ boat, onClose }) => {
     if (!boat) return null;
@@ -64,12 +64,16 @@ const BoatInfoPanel = ({ boat, onClose }) => {
 
     const mmsi = boat.MetaData?.MMSI || boat.static?.Mmsi || 'Unknown';
     const name = boat.MetaData?.ShipName || boat.static?.Name || `Unknown Vessel (${mmsi})`;
-    const type = boat.static?.Type || 'Unknown';
+    const typeCode = boat.static?.Type;
+    const type = typeCode ? getVesselDescription(typeCode) : 'Unknown';
     const destination = boat.static?.Destination || 'Unknown';
     const sog = boat.Message?.PositionReport?.Sog !== undefined ? `${boat.Message.PositionReport.Sog} kn` : '-';
     const cog = boat.Message?.PositionReport?.Cog !== undefined ? `${boat.Message.PositionReport.Cog}°` : '-';
     const lat = boat.Message?.PositionReport?.Latitude?.toFixed(4) || '-';
     const lon = boat.Message?.PositionReport?.Longitude?.toFixed(4) || '-';
+    const status = boat.Message?.PositionReport?.NavigationalStatus !== undefined
+        ? getNavigationalStatus(boat.Message.PositionReport.NavigationalStatus)
+        : 'Unknown';
 
     return (
         <div style={styles.panel}>
@@ -84,6 +88,12 @@ const BoatInfoPanel = ({ boat, onClose }) => {
             </div>
 
             <div style={styles.grid}>
+                {/* Status at the top for visibility */}
+                <div style={{ gridColumn: '1 / -1' }}>
+                    <div style={styles.label}>STATUS</div>
+                    <div style={{ ...styles.value, color: '#4ade80' }}>{status}</div>
+                </div>
+
                 <div>
                     <div style={styles.label}>DESTINATION</div>
                     <div style={styles.value} title={destination}>{destination}</div>

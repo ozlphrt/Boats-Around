@@ -3,8 +3,16 @@ import React, { useState, useEffect, useRef } from 'react';
 const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch, locationPermissionRequested, onRequestLocation, enabledVesselTypes, onToggleVesselType, showLabels, onToggleLabels }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showApiDetails, setShowApiDetails] = useState(false);
-    const [showLegend, setShowLegend] = useState(false);
+    const [showLegend, setShowLegend] = useState(true);
     const legendTimerRef = useRef(null);
+
+    // Auto-hide initial legend after 5 seconds
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setShowLegend(false);
+        }, 5000);
+        return () => clearTimeout(timer);
+    }, []);
 
     const handleApiClick = () => {
         setShowApiDetails(true);
@@ -16,10 +24,10 @@ const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch, locatio
         if (legendTimerRef.current) {
             clearTimeout(legendTimerRef.current);
         }
-        
+
         // Show legend
         setShowLegend(true);
-        
+
         // Auto-hide after 5 seconds
         legendTimerRef.current = setTimeout(() => {
             setShowLegend(false);
@@ -45,7 +53,7 @@ const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch, locatio
         return '#fbbf24'; // Default to yellow
     };
     const statusColor = getStatusColor();
-    
+
     // Enhanced status message for better UX
     const getStatusMessage = () => {
         if (connectionStatus.includes('Err: Connection Dropped') || connectionStatus.includes('Socket Error')) {
@@ -144,7 +152,7 @@ const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch, locatio
             background: 'transparent',
             outline: 'none',
             color: 'white',
-            fontSize: '0.9rem',
+            fontSize: '16px',
             fontFamily: 'Inter, system-ui, sans-serif',
             minWidth: 0
         },
@@ -304,7 +312,7 @@ const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch, locatio
             {showLegend ? (
                 <div style={styles.legendContainer}>
                     {/* Vessel Labels Toggle */}
-                    <div 
+                    <div
                         style={styles.toggleContainer}
                         onClick={() => onToggleLabels(!showLabels)}
                     >
@@ -320,23 +328,26 @@ const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch, locatio
                         </div>
                         <span style={styles.legendText}>Vessel Labels</span>
                     </div>
-                    
+
                     {/* Separator */}
                     <div style={{ height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }}></div>
-                    
+
                     {/* Vessel Type Toggles */}
                     {[
                         { label: 'Cargo', color: '#90EE90' }, // LIGHTGREEN
                         { label: 'Tanker', color: '#CD5C5C' }, // INDIANRED
                         { label: 'Passenger', color: '#87CEEB' }, // SKYBLUE
+                        { label: 'High Speed', color: '#00FFFF' }, // CYAN
+                        { label: 'Tug', color: '#FFFF00' }, // YELLOW
+                        { label: 'Special', color: '#FFD700' }, // GOLD
                         { label: 'Fishing', color: '#FFA500' }, // ORANGE
                         { label: 'Pleasure', color: '#FF00FF' }, // MAGENTA
                         { label: 'Other', color: '#FFFFFF' }   // WHITE
                     ].map((item) => {
                         const isEnabled = enabledVesselTypes[item.label] !== false;
                         return (
-                            <div 
-                                key={item.label} 
+                            <div
+                                key={item.label}
                                 style={styles.toggleContainer}
                                 onClick={() => {
                                     onToggleVesselType(prev => ({

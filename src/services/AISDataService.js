@@ -14,6 +14,11 @@ export class AISDataService {
         this.reconnectTimer = null;
         this.lastConnectAttempt = null;
         this.isManuallyDisconnected = false;
+
+        // Throttling for subscription updates (to avoid 4003 Too Many Requests)
+        this.lastSubscriptionTime = 0;
+        this.subscriptionThrottleMs = 2000; // 2 seconds between updates
+        this.pendingSubscriptionTimer = null;
     }
 
     connect(onMessage, onStatusChange, isScheduledReconnect = false) {
@@ -37,23 +42,29 @@ export class AISDataService {
         this.lastConnectAttempt = now;
 
         this.onMessage = onMessage;
-        
+
         // Detect production environment (GitHub Pages or Vite production build)
         const isProduction = import.meta.env.PROD || window.location.hostname.includes('github.io');
         const AIS_STREAM_URL = 'wss://stream.aisstream.io/v0/stream';
-        
+        const PROD_PROXY_URL = import.meta.env.VITE_AISSTREAM_PROXY_URL;
+
         let socketUrl;
         if (isProduction) {
-            // Production: Connect directly to AISStream
-            socketUrl = AIS_STREAM_URL;
-            console.log(`[AIS] Opening WebSocket (Direct to AISStream)... (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+            if (PROD_PROXY_URL) {
+                socketUrl = PROD_PROXY_URL;
+                console.log(`[AIS] Opening WebSocket via Production Proxy... (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+            } else {
+                // Production: Connect directly to AISStream (will likely fail in browser)
+                socketUrl = AIS_STREAM_URL;
+                console.log(`[AIS] Opening WebSocket (Direct to AISStream - Browser mode)... (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+            }
         } else {
             // Development: Use Vite proxy
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             socketUrl = `${protocol}//${window.location.host}/api/socket`;
             console.log(`[AIS] Opening WebSocket via Vite Proxy... (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
         }
-        
+
         try {
             this.socket = new WebSocket(socketUrl);
         } catch (error) {
@@ -138,9 +149,15 @@ export class AISDataService {
             if (event.code === 1006) {
                 errorMsg = "Err: Connection Dropped"; // Abnormal - connection failed
                 const isProduction = import.meta.env.PROD || window.location.hostname.includes('github.io');
+                const PROD_PROXY_URL = import.meta.env.VITE_AISSTREAM_PROXY_URL;
+
                 if (this.onStatusChange) {
                     if (isProduction) {
-                        this.onStatusChange("Connection failed - Check API key");
+                        if (!PROD_PROXY_URL) {
+                            this.onStatusChange("Production requires proxy. See implementation_plan.md");
+                        } else {
+                            this.onStatusChange("Proxy connection failed. Check proxy server.");
+                        }
                     } else {
                         this.onStatusChange("Proxy server not running. Run: npm run start:proxy");
                     }
@@ -173,7 +190,7 @@ export class AISDataService {
 
     scheduleReconnect(onMessage, onStatusChange) {
         if (this.isManuallyDisconnected) return;
-        
+
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             console.error(`[AIS] Max reconnect attempts (${this.maxReconnectAttempts}) reached. Stopping.`);
             if (this.onStatusChange) {
@@ -184,9 +201,9 @@ export class AISDataService {
 
         this.reconnectAttempts++;
         const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), this.maxReconnectDelay);
-        
+
         console.log(`[AIS] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-        
+
         if (this.onStatusChange) {
             this.onStatusChange(`Reconnecting... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
         }
@@ -200,12 +217,37 @@ export class AISDataService {
     updateSettings(boundingBox) {
         this.pendingBoundingBox = boundingBox;
 
+        // --- Throttling Logic ---
+        const now = Date.now();
+        const timeSinceLast = now - this.lastSubscriptionTime;
+
+        if (timeSinceLast < this.subscriptionThrottleMs) {
+            if (!this.pendingSubscriptionTimer) {
+                const waitTime = this.subscriptionThrottleMs - timeSinceLast;
+                console.log(`[AIS] Throttling subscription update (waiting ${waitTime}ms)`);
+                this.pendingSubscriptionTimer = setTimeout(() => {
+                    this.pendingSubscriptionTimer = null;
+                    if (this.pendingBoundingBox) {
+                        this.updateSettings(this.pendingBoundingBox);
+                    }
+                }, waitTime);
+            }
+            return;
+        }
+
+        // Clear any pending timer if we are proceeding
+        if (this.pendingSubscriptionTimer) {
+            clearTimeout(this.pendingSubscriptionTimer);
+            this.pendingSubscriptionTimer = null;
+        }
+
         if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
             console.log("[AIS] Socket not ready. Subscription queued for when open.");
 
             // Auto-reconnect if socket is dead/null (but respect manual disconnect)
             if (!this.isManuallyDisconnected && (!this.socket || this.socket.readyState === WebSocket.CLOSED)) {
-                const now = Date.now();
+
+                // Check throttle for CONNECT attempts (separate from subscription throttle)
                 if (this.lastConnectAttempt && (now - this.lastConnectAttempt < 2000)) {
                     console.log("[AIS] Reconnect throttled. Waiting...");
                     return;
@@ -231,15 +273,16 @@ export class AISDataService {
         console.log("[AIS] Sending/Updating Subscription...");
         console.log(`[AIS] BBox: [${boundingBox.south.toFixed(2)}, ${boundingBox.west.toFixed(2)}] to [${boundingBox.north.toFixed(2)}, ${boundingBox.east.toFixed(2)}]`);
         console.log(`[AIS] API Key: ${this.apiKey ? (this.apiKey.substring(0, 8) + '...') : 'MISSING'}`);
-        
+
         if (!this.apiKey || this.apiKey === 'undefined' || this.apiKey === 'null') {
             console.error('[AIS] ⚠️ API KEY IS MISSING! Set VITE_AISSTREAM_API_KEY in .env file');
             if (this.onStatusChange) {
                 this.onStatusChange('Missing API Key - Check .env');
             }
         }
-        
+
         this.socket.send(JSON.stringify(subscriptionMessage));
+        this.lastSubscriptionTime = Date.now();
     }
 
     disconnect() {
