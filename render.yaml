@@ -6,5 +6,5 @@ services:
     buildCommand: npm install && npm run build
     startCommand: node proxy-server.cjs
     envVars:
-      - key: PORT
-        value: 3001
+      - key: VITE_AISSTREAM_API_KEY
+        sync: false
