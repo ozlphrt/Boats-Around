@@ -2,9 +2,12 @@ services:
   - type: web
     name: boats-around-proxy
     env: node
+    region: oregon
     plan: free
     buildCommand: npm install && npm run build
     startCommand: node proxy-server.cjs
     envVars:
+      - key: NODE_VERSION
+        value: 20.19.0
       - key: VITE_AISSTREAM_API_KEY
         sync: false
