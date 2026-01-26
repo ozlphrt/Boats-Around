@@ -154,9 +154,11 @@ export class AISDataService {
                 if (this.onStatusChange) {
                     if (isProduction) {
                         if (!PROD_PROXY_URL) {
-                            this.onStatusChange("Production requires proxy. See implementation_plan.md");
+                            this.onStatusChange("MISSING PROXY: Set VITE_AISSTREAM_PROXY_URL env var");
+                            console.error("[AIS] ❌ CRITICAL: Production requires a WebSocket proxy.");
+                            console.error("[AIS] Deploy the 'proxy-server.cjs' (e.g. to Render) and set VITE_AISSTREAM_PROXY_URL.");
                         } else {
-                            this.onStatusChange("Proxy connection failed. Check proxy server.");
+                            this.onStatusChange("Proxy Connection Failed. Check server logs.");
                         }
                     } else {
                         this.onStatusChange("Proxy server not running. Run: npm run start:proxy");

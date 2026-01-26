@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: boats-around-proxy
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node proxy-server.cjs
+    envVars:
+      - key: PORT
+        value: 3001
