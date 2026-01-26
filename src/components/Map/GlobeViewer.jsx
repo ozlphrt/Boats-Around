@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Viewer, Entity, PointGraphics, EllipseGraphics, LabelGraphics } from 'resium';
-import { Cartesian3, Color, ScreenSpaceEventHandler, ScreenSpaceEventType, defined, BillboardCollection, LabelCollection, LabelStyle, Math as CesiumMath, Cartesian2, VerticalOrigin, HorizontalOrigin, HeadingPitchRoll, BoundingSphere, HeadingPitchRange, Cartographic, ImageMaterialProperty } from 'cesium';
+import { Cartesian3, Color, ScreenSpaceEventHandler, ScreenSpaceEventType, defined, BillboardCollection, LabelCollection, LabelStyle, Math as CesiumMath, Cartesian2, VerticalOrigin, HorizontalOrigin, HeadingPitchRoll, BoundingSphere, HeadingPitchRange, Cartographic, ImageMaterialProperty, SceneTransforms, JulianDate } from 'cesium';
 import LongPressProgress from '../UI/LongPressProgress';
 import { getVesselCategory, getShipColor, getVesselSize } from '../../utils/vesselUtils';
 
@@ -202,85 +202,83 @@ const GlobeViewer = ({ userLocation, boats, selectedBoat, onSelectBoat, onLocati
         }; // Close updateBoats
 
         updateBoats();
-    }, [sortedBoats, showLabels, cesiumInstance]); // Remove boats from dependency if we use sortedBoats
+    }, [sortedBoats, showLabels, cesiumInstance]);
 
-    // 2.5 Label Decluttering (PostRender)
+    // 2.5 Collision Detection (PostRender)
     useEffect(() => {
-        if (!cesiumInstance) return;
-        const scene = cesiumInstance.scene;
+        const viewer = cesiumInstance;
+        if (!viewer) return;
 
-        const scratchPosition = new Cartesian2();
+        const scene = viewer.scene;
+        const removePostRender = scene.postRender.addEventListener(() => {
+            if (!showLabels) return;
 
-        const declutter = () => {
-            if (!showLabels) return; // If globally off, nothing to do (updateBoats handles turning them off)
+            const occupiedRects = []; // Array of {x, y, w, h}
+            const time = viewer.clock.currentTime;
 
-            const occupiedRects = [];
-
-            // Iterate through SORTED boats (Largest/Most important first)
-            for (const boat of sortedBoats) {
+            sortedBoats.forEach(boat => {
                 const mmsi = boat.MetaData?.MMSI;
-                if (!mmsi) continue;
+                if (!mmsi) return;
 
                 const entry = entityMap.current.get(mmsi);
-                if (!entry || !entry.entity || !entry.entity.label) continue;
+                if (!entry || !entry.entity || !entry.entity.label) return;
 
                 const entity = entry.entity;
-                // Get current position in screen coordinates
-                // We need the Cartesian3 position. It might be a Property or a value.
-                // entity.position is a PositionProperty. getValue needs time.
-                const positionCartesian = entity.position.getValue(cesiumInstance.clock.currentTime);
 
-                if (!positionCartesian) {
+                let position = entity.position?.getValue(time);
+
+                if (!position) return;
+
+                // Convert to screen coordinates
+                const canvasPosition = SceneTransforms.wgs84ToWindowCoordinates(scene, position);
+
+                if (!canvasPosition) {
                     entity.label.show = false;
-                    continue;
+                    return;
                 }
 
-                // Convert to screen coords
-                const screenPos = scene.cartesianToCanvasCoordinates(positionCartesian, scratchPosition);
+                const text = boat.MetaData?.ShipName || '';
+                const width = text.length * 8 + 10;
+                const height = 20;
 
-                if (!screenPos) {
-                    // Off screen (behind camera)
-                    entity.label.show = false;
-                    continue;
-                }
+                const labelX = canvasPosition.x;
+                const labelY = canvasPosition.y - 25;
 
-                // Define Label Bounding Box
-                // Approx size: 100px wide, 20px high. 
-                // Pixel offset is (0, -25) -> 25px UP from the anchor.
-                const labelWidth = 120;
-                const labelHeight = 20;
-                const x = screenPos.x - labelWidth / 2; // Centered horizontally
-                const y = screenPos.y - 25 - labelHeight; // Above the point
+                const box = {
+                    x: labelX - width / 2,
+                    y: labelY - height,
+                    w: width,
+                    h: height
+                };
 
-                const myRect = { x, y, width: labelWidth, height: labelHeight };
-
-                // Check collision with already visible labels
                 let overlap = false;
                 for (const rect of occupiedRects) {
-                    if (x < rect.x + rect.width &&
-                        x + labelWidth > rect.x &&
-                        y < rect.y + rect.height &&
-                        y + labelHeight > rect.y) {
+                    if (
+                        box.x < rect.x + rect.w &&
+                        box.x + box.w > rect.x &&
+                        box.y < rect.y + rect.h &&
+                        box.y + box.h > rect.y
+                    ) {
                         overlap = true;
                         break;
                     }
                 }
 
                 if (overlap) {
-                    if (entity.label.show) entity.label.show = false;
+                    entity.label.show = false;
                 } else {
-                    if (!entity.label.show) entity.label.show = true;
-                    occupiedRects.push(myRect);
+                    entity.label.show = true;
+                    occupiedRects.push(box);
                 }
-            }
-        };
-
-        const removeListener = scene.postRender.addEventListener(declutter);
+            });
+        });
 
         return () => {
-            removeListener();
+            removePostRender();
         };
-    }, [cesiumInstance, showLabels, sortedBoats]);
+    }, [sortedBoats, showLabels, cesiumInstance]);
+
+
 
     // 3. Picking & Interaction Handler (Click + Long Press)
     useEffect(() => {

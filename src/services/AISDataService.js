@@ -44,20 +44,15 @@ export class AISDataService {
         this.onMessage = onMessage;
 
         // Detect production environment (GitHub Pages or Vite production build)
-        const isProduction = import.meta.env.PROD || window.location.hostname.includes('github.io');
+        const isProduction = import.meta.env.PROD || window.location.hostname.includes('github.io') || !window.location.hostname.includes('localhost');
         const AIS_STREAM_URL = 'wss://stream.aisstream.io/v0/stream';
-        const PROD_PROXY_URL = import.meta.env.VITE_AISSTREAM_PROXY_URL;
 
         let socketUrl;
         if (isProduction) {
-            if (PROD_PROXY_URL) {
-                socketUrl = PROD_PROXY_URL;
-                console.log(`[AIS] Opening WebSocket via Production Proxy... (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
-            } else {
-                // Production: Connect directly to AISStream (will likely fail in browser)
-                socketUrl = AIS_STREAM_URL;
-                console.log(`[AIS] Opening WebSocket (Direct to AISStream - Browser mode)... (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
-            }
+            // Production: Use same host as the page (Consolidated server)
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            socketUrl = `${protocol}//${window.location.host}`;
+            console.log(`[AIS] Connecting to Consolidated Production Proxy: ${socketUrl} (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
         } else {
             // Development: Use Vite proxy
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -73,7 +68,8 @@ export class AISDataService {
             return;
         }
 
-        // WATCHDOG: If not connected in 15 seconds, retry.
+        // WATCHDOG: If not connected in 90 seconds, retry.
+        // Render free tier can take 60s+ to wake up from sleep.
         this.connectTimeout = setTimeout(() => {
             if (this.socket && this.socket.readyState !== WebSocket.OPEN) {
                 console.warn("[AIS] Connection timed out (stuck in handshaking). Retrying...");
@@ -82,7 +78,7 @@ export class AISDataService {
                 }
                 this.scheduleReconnect(onMessage, onStatusChange);
             }
-        }, 15000);
+        }, 90000);
 
         this.socket.onopen = () => {
             console.log("[AIS] WebSocket Connected");
@@ -148,18 +144,9 @@ export class AISDataService {
             if (event.code === 4003) errorMsg = "Err: Rate Limited (4003)";
             if (event.code === 1006) {
                 errorMsg = "Err: Connection Dropped"; // Abnormal - connection failed
-                const isProduction = import.meta.env.PROD || window.location.hostname.includes('github.io');
-                const PROD_PROXY_URL = import.meta.env.VITE_AISSTREAM_PROXY_URL;
-
                 if (this.onStatusChange) {
                     if (isProduction) {
-                        if (!PROD_PROXY_URL) {
-                            this.onStatusChange("MISSING PROXY: Set VITE_AISSTREAM_PROXY_URL env var");
-                            console.error("[AIS] ❌ CRITICAL: Production requires a WebSocket proxy.");
-                            console.error("[AIS] Deploy the 'proxy-server.cjs' (e.g. to Render) and set VITE_AISSTREAM_PROXY_URL.");
-                        } else {
-                            this.onStatusChange("Proxy Connection Failed. Check server logs.");
-                        }
+                        this.onStatusChange("Proxy Connection Failed. Check server logs.");
                     } else {
                         this.onStatusChange("Proxy server not running. Run: npm run start:proxy");
                     }

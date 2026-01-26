@@ -56,11 +56,18 @@ const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch, locatio
 
     // Enhanced status message for better UX
     const getStatusMessage = () => {
+        const isProduction = window.location.hostname.includes('github.io') || !window.location.hostname.includes('localhost');
+
         if (connectionStatus.includes('Err: Connection Dropped') || connectionStatus.includes('Socket Error')) {
-            return 'Proxy server not running. Run: npm run start:proxy';
+            return isProduction
+                ? 'Production Proxy Unreachable. Check Render status.'
+                : 'Proxy server not running. Run: npm run start:proxy';
         }
         if (connectionStatus.includes('Missing API Key')) {
             return 'Set VITE_AISSTREAM_API_KEY in .env';
+        }
+        if (connectionStatus.includes('Connecting')) {
+            return isProduction ? 'Connecting via Render Proxy...' : 'Connecting via Vite Proxy...';
         }
         return connectionStatus;
     };
@@ -303,6 +310,26 @@ const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch, locatio
                             <span style={{ color: 'rgba(255,255,255,0.3)', margin: '0 4px' }}>|</span>
                             {/* Styled Vessels text to match API */}
                             <span style={{ ...styles.statusText, fontWeight: '600' }}>{boatCount} Vessels</span>
+
+                            {/* Retry button icon if failed */}
+                            {(connectionStatus.includes('Failed') || connectionStatus.includes('Dropped') || connectionStatus.includes('Unreachable') || connectionStatus.includes('Error')) && (
+                                <>
+                                    <span style={{ color: 'rgba(255,255,255,0.3)', margin: '0 4px' }}>|</span>
+                                    <div
+                                        style={{ ...styles.statusIcon, color: '#fbbf24', cursor: 'pointer' }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            window.location.reload(); // Simple retry for now
+                                        }}
+                                        title="Reload to retry connection"
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M23 4v6h-6"></path>
+                                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                                        </svg>
+                                    </div>
+                                </>
+                            )}
                         </>
                     )}
                 </div>

@@ -3,7 +3,7 @@ services:
     name: boats-around-proxy
     env: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm install && npm run build
     startCommand: node proxy-server.cjs
     envVars:
       - key: PORT

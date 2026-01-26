@@ -1,11 +1,22 @@
-const WebSocket = require('ws');
+const express = require('express');
+const path = require('path');
 const { createServer } = require('http');
+const WebSocket = require('ws');
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 const API_URL = "wss://stream.aisstream.io/v0/stream";
 
-const server = createServer();
+const app = express();
+const server = createServer(app);
 const wss = new WebSocket.Server({ server });
+
+// Serve static files from the 'dist' directory
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// Fallback to index.html for SPA (Single Page Application) routing
+app.use((req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
 wss.on('connection', (clientWs) => {
     console.log("Client connected to proxy");
@@ -18,7 +29,6 @@ wss.on('connection', (clientWs) => {
 
     upstreamWs.on('message', (data) => {
         if (clientWs.readyState === WebSocket.OPEN) {
-            // console.log("Forwarding message from upstream to client"); // Too noisy
             clientWs.send(data);
         }
     });
@@ -35,14 +45,10 @@ wss.on('connection', (clientWs) => {
 
     clientWs.on('message', (data) => {
         console.log("Received message from client:", data.toString());
-        // Forward subscription messages from client to upstream
         if (upstreamWs.readyState === WebSocket.OPEN) {
-            console.log("Forwarding message to upstream");
             upstreamWs.send(data);
         } else {
-            console.log("Upstream not ready, queuing message");
             upstreamWs.once('open', () => {
-                console.log("Forwarding queued message");
                 upstreamWs.send(data);
             });
         }
@@ -55,7 +61,9 @@ wss.on('connection', (clientWs) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`Relay Server running on ws://localhost:${PORT}`);
+    console.log(`Consolidated Server running on port ${PORT}`);
+    console.log(`Web interface: http://localhost:${PORT}`);
+    console.log(`WebSocket: ws://localhost:${PORT}`);
 });
 
 process.on('uncaughtException', (err) => {
