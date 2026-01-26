@@ -83,7 +83,7 @@ const GlobeViewer = ({ userLocation, boats, selectedBoat, onSelectBoat, onLocati
 
             const currentMmsis = new Set();
             let renderedCount = 0;
-            const occupiedRects = []; // For decluttering
+            // const occupiedRects = []; // Moved to postRender for dynamic checking
             const scene = viewer.scene;
             const heading = scene.camera.heading;
 
@@ -178,17 +178,17 @@ const GlobeViewer = ({ userLocation, boats, selectedBoat, onSelectBoat, onLocati
                         if (boat.MetaData?.ShipName) {
                             entry.entity.label.text = boat.MetaData.ShipName;
                         }
-                        entry.entity.label.show = showLabels;
+                        // Only force update show if it's strictly false or we are initializing? 
+                        // No, let declutter logic handle 'show' if showLabels is true.
+                        // If showLabels is false, we can force it off here.
+                        if (!showLabels) {
+                            entry.entity.label.show = false;
+                        }
+                        // If showLabels is true, we leave it to declutter logic, 
+                        // BUT we must ensure it's not permanently stuck off if we switch back.
+                        // We'll let the postRender loop handle turning it ON.
                     }
                 }
-
-                // Decluttering could happen here by checking screen positions of labels
-                // For now, simple logic:
-                if (showLabels && entry.entity.label) {
-                    // Check overlap if we want advanced decluttering
-                    // Or just rely on showLabels toggle
-                }
-
 
             });
             for (const [mmsi, entry] of entityMap.current.entries()) {
@@ -202,7 +202,85 @@ const GlobeViewer = ({ userLocation, boats, selectedBoat, onSelectBoat, onLocati
         }; // Close updateBoats
 
         updateBoats();
-    }, [sortedBoats, showLabels, cesiumInstance]);
+    }, [sortedBoats, showLabels, cesiumInstance]); // Remove boats from dependency if we use sortedBoats
+
+    // 2.5 Label Decluttering (PostRender)
+    useEffect(() => {
+        if (!cesiumInstance) return;
+        const scene = cesiumInstance.scene;
+
+        const scratchPosition = new Cartesian2();
+
+        const declutter = () => {
+            if (!showLabels) return; // If globally off, nothing to do (updateBoats handles turning them off)
+
+            const occupiedRects = [];
+
+            // Iterate through SORTED boats (Largest/Most important first)
+            for (const boat of sortedBoats) {
+                const mmsi = boat.MetaData?.MMSI;
+                if (!mmsi) continue;
+
+                const entry = entityMap.current.get(mmsi);
+                if (!entry || !entry.entity || !entry.entity.label) continue;
+
+                const entity = entry.entity;
+                // Get current position in screen coordinates
+                // We need the Cartesian3 position. It might be a Property or a value.
+                // entity.position is a PositionProperty. getValue needs time.
+                const positionCartesian = entity.position.getValue(cesiumInstance.clock.currentTime);
+
+                if (!positionCartesian) {
+                    entity.label.show = false;
+                    continue;
+                }
+
+                // Convert to screen coords
+                const screenPos = scene.cartesianToCanvasCoordinates(positionCartesian, scratchPosition);
+
+                if (!screenPos) {
+                    // Off screen (behind camera)
+                    entity.label.show = false;
+                    continue;
+                }
+
+                // Define Label Bounding Box
+                // Approx size: 100px wide, 20px high. 
+                // Pixel offset is (0, -25) -> 25px UP from the anchor.
+                const labelWidth = 120;
+                const labelHeight = 20;
+                const x = screenPos.x - labelWidth / 2; // Centered horizontally
+                const y = screenPos.y - 25 - labelHeight; // Above the point
+
+                const myRect = { x, y, width: labelWidth, height: labelHeight };
+
+                // Check collision with already visible labels
+                let overlap = false;
+                for (const rect of occupiedRects) {
+                    if (x < rect.x + rect.width &&
+                        x + labelWidth > rect.x &&
+                        y < rect.y + rect.height &&
+                        y + labelHeight > rect.y) {
+                        overlap = true;
+                        break;
+                    }
+                }
+
+                if (overlap) {
+                    if (entity.label.show) entity.label.show = false;
+                } else {
+                    if (!entity.label.show) entity.label.show = true;
+                    occupiedRects.push(myRect);
+                }
+            }
+        };
+
+        const removeListener = scene.postRender.addEventListener(declutter);
+
+        return () => {
+            removeListener();
+        };
+    }, [cesiumInstance, showLabels, sortedBoats]);
 
     // 3. Picking & Interaction Handler (Click + Long Press)
     useEffect(() => {
