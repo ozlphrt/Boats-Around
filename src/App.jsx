@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import GlobeViewer from './components/Map/GlobeViewer';
 import AppOverlay from './components/UI/AppOverlay';
 import BoatInfoPanel from './components/UI/BoatInfoPanel';
@@ -12,8 +12,14 @@ const DEFAULT_LOCATION = {
   heading: 0
 };
 
+// Progressive radius steps in Nautical Miles
+const RADIUS_STEPS = [1, 2, 5, 10, 25, 50];
+
 function App() {
   const [userLocation, setUserLocation] = useState(DEFAULT_LOCATION);
+  const [focalPoint, setFocalPoint] = useState(DEFAULT_LOCATION);
+  const [locationSource, setLocationSource] = useState('default'); // 'default', 'gps', 'search', 'map'
+  const [searchRadius, setSearchRadius] = useState(RADIUS_STEPS[0]);
   const [boats, setBoats] = useState([]);
   const [connectionStatus, setConnectionStatus] = useState('Initializing');
   const [selectedBoat, setSelectedBoat] = useState(null);
@@ -21,104 +27,98 @@ function App() {
   const [isTrackingUser, setIsTrackingUser] = useState(true);
   const [locationPermissionRequested, setLocationPermissionRequested] = useState(false);
   const [enabledVesselTypes, setEnabledVesselTypes] = useState({
-    Cargo: true,
-    Tanker: true,
-    Passenger: true,
-    'High Speed': true,
-    Tug: true,
-    Special: true,
-    Fishing: true,
-    Pleasure: true,
-    Other: true
+    Cargo: true, Tanker: true, Passenger: true, 'High Speed': true,
+    Tug: true, Special: true, Fishing: true, Pleasure: true, Other: true
   });
   const [showLabels, setShowLabels] = useState(true);
 
   const aisServiceRef = useRef(null);
   const locationWatchId = useRef(null);
-  const lastSubscriptionLoc = useRef(null);
   const isTrackingUserRef = useRef(true);
+  const lastSubscriptionRef = useRef({ lat: 0, lon: 0, radius: 0 });
 
   // Sync ref with state
   useEffect(() => {
     isTrackingUserRef.current = isTrackingUser;
   }, [isTrackingUser]);
 
-
-  // 1. Initialize Services (One-time setup)
+  // 1. Initialize AIS Service
   useEffect(() => {
-    // Setup AIS Service
     const apiKey = import.meta.env.VITE_AISSTREAM_API_KEY;
     if (apiKey && apiKey !== 'undefined') {
-      console.log(`[App] API Key configured: ${apiKey.substring(0, 8)}...`);
       aisServiceRef.current = new AISDataService(apiKey);
-      connectLiveAIS();
+      aisServiceRef.current.connect(
+        (msg) => handleAISMessage(msg),
+        (status) => setConnectionStatus(status)
+      );
     } else {
-      console.error("[App] ⚠️ No API Key found! Create .env file with VITE_AISSTREAM_API_KEY=your_key");
-      console.error("[App] Get API key from: https://aisstream.io/");
       setConnectionStatus('Missing API Key - Set in .env');
     }
 
+    // Auto-request location on mount
+    const timer = setTimeout(() => {
+      requestLocationPermission();
+    }, 1000);
+
     return () => {
       if (aisServiceRef.current) aisServiceRef.current.disconnect();
+      clearTimeout(timer);
     };
-  }, []); // Run once on mount
+  }, []);
 
-  // 1.5. Auto-request GPS location removed to comply with browser policy
-  // Users must now trigger this via the "Enable Location" button
+  // 2. Progressive Subscription Logic (Debounced)
   useEffect(() => {
-    // Small delay to ensure viewer is ready
-    const timer = setTimeout(() => {
-      if (!locationPermissionRequested) {
-        requestLocationPermission();
+    if (!aisServiceRef.current) return;
+
+    const handler = setTimeout(() => {
+      const updateSubscription = () => {
+        // Only update if focal point or radius changed significantly
+        const dist = Math.sqrt(
+          Math.pow(lastSubscriptionRef.current.lat - focalPoint.lat, 2) +
+          Math.pow(lastSubscriptionRef.current.lon - focalPoint.lon, 2)
+        );
+
+        // Radius in degrees approx (1nm = 1/60 degrees)
+        const variance = searchRadius / 60;
+
+        // If we moved less than 10% of current radius and radius hasn't changed, skip
+        if (dist < (variance * 0.1) && lastSubscriptionRef.current.radius === searchRadius) return;
+
+        lastSubscriptionRef.current = { ...focalPoint, radius: searchRadius };
+
+        const bbox = {
+          north: focalPoint.lat + variance,
+          south: focalPoint.lat - variance,
+          east: focalPoint.lon + (variance / Math.cos(focalPoint.lat * Math.PI / 180)),
+          west: focalPoint.lon - (variance / Math.cos(focalPoint.lat * Math.PI / 180))
+        };
+
+        console.log(`[App] 🛰️ Subscribing: ${searchRadius}NM radius around ${focalPoint.lat.toFixed(4)}, ${focalPoint.lon.toFixed(4)}`, JSON.stringify(bbox));
+        aisServiceRef.current.updateSettings(bbox);
+      };
+
+      updateSubscription();
+    }, 1000); // 1s Debounce to prevent rate limiting
+
+    return () => clearTimeout(handler);
+  }, [focalPoint, searchRadius]);
+
+  // 3. Expansion Logic
+  useEffect(() => {
+    const canExpand = boats.length < 100;
+    if (canExpand) {
+      const nextRadiusIndex = RADIUS_STEPS.indexOf(searchRadius) + 1;
+      if (nextRadiusIndex < RADIUS_STEPS.length) {
+        // Speed up expansion if 0 boats found (5s vs 16s)
+        const delay = boats.length === 0 ? 5000 : 16000;
+        const timer = setTimeout(() => {
+          console.log(`[App] 📈 Expanding search radius to ${RADIUS_STEPS[nextRadiusIndex]}NM (current count: ${boats.length})`);
+          setSearchRadius(RADIUS_STEPS[nextRadiusIndex]);
+        }, delay);
+        return () => clearTimeout(timer);
       }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, []); // Run once on mount
-
-  // 2. Subscription Updates based on Location
-  useEffect(() => {
-    if (!userLocation || !aisServiceRef.current) return;
-
-    // Check distance to update subscription
-    if (lastSubscriptionLoc.current) {
-      const dist = Math.sqrt(
-        Math.pow(lastSubscriptionLoc.current.lat - userLocation.lat, 2) +
-        Math.pow(lastSubscriptionLoc.current.lon - userLocation.lon, 2)
-      );
-      if (dist < 0.05) return; // Haven't moved enough
     }
-
-    lastSubscriptionLoc.current = userLocation;
-
-    const variance = 2.0; // Large radius (~220km radius)
-    const bbox = {
-      north: userLocation.lat + variance,
-      south: userLocation.lat - variance,
-      east: userLocation.lon + variance,
-      west: userLocation.lon - variance
-    };
-
-    console.log(`[App] 📍 Location: ${userLocation.lat.toFixed(4)}, ${userLocation.lon.toFixed(4)}`);
-    console.log(`[App] 🗺️ Subscribing to ${(variance * 111).toFixed(0)}km radius`);
-
-    if (aisServiceRef.current) aisServiceRef.current.updateSettings(bbox);
-
-  }, [userLocation]);
-
-
-  const connectLiveAIS = () => {
-    setConnectionStatus('Connecting to AIS...');
-    aisServiceRef.current.connect(
-      (msg) => {
-        // ... existing message handling logic ...
-        // We need to duplicate the reducer logic or move it to a helper
-        // For simplicity, I'll inline a simplified version or reuse the logic
-        handleAISMessage(msg);
-      },
-      (status) => setConnectionStatus(status)
-    );
-  };
+  }, [boats.length < 100, boats.length === 0, searchRadius]);
 
   const handleAISMessage = (msg) => {
     setBoats(prevBoats => {
@@ -128,122 +128,107 @@ function App() {
 
       if (index !== -1) {
         const existingBoat = updatedBoats[index];
-        if (msg.MessageType === "PositionReport") {
-          const shipName = msg.MetaData?.ShipName?.trim();
+        const innerMsg = msg.Message[msg.MessageType];
+
+        if (msg.MessageType.includes("PositionReport") && innerMsg) {
           updatedBoats[index] = {
             ...existingBoat,
-            Message: { ...existingBoat.Message, PositionReport: msg.Message.PositionReport },
-            MetaData: shipName ? { ...msg.MetaData, ShipName: shipName } : msg.MetaData,
+            MessageType: msg.MessageType,
+            Message: { ...existingBoat.Message, [msg.MessageType]: innerMsg },
+            MetaData: msg.MetaData.ShipName?.trim() ? { ...msg.MetaData, ShipName: msg.MetaData.ShipName.trim() } : msg.MetaData,
             lastUpdate: Date.now()
           };
         } else if (msg.MessageType === "ShipStaticData") {
-          const shipName = msg.Message.ShipStaticData?.Name?.trim();
-          console.log(`[App] ℹ️ Static Data for ${mmsi}:`, msg.Message.ShipStaticData); // DEBUG LOG
           updatedBoats[index] = {
             ...existingBoat,
-            static: { ...msg.Message.ShipStaticData, Name: shipName },
-            MetaData: shipName ? { ...existingBoat.MetaData, ShipName: shipName } : existingBoat.MetaData,
+            MessageType: msg.MessageType,
+            static: { ...msg.Message.ShipStaticData, Name: msg.Message.ShipStaticData.Name?.trim() },
+            MetaData: msg.Message.ShipStaticData.Name?.trim() ? { ...existingBoat.MetaData, ShipName: msg.Message.ShipStaticData.Name.trim() } : existingBoat.MetaData,
             lastUpdate: Date.now()
           };
         }
       } else {
-        if (msg.MessageType === "PositionReport") {
-          const mmsi = msg.MetaData?.MMSI;
-          const shipName = msg.MetaData?.ShipName?.trim();
+        if (msg.MessageType.includes("PositionReport") || msg.MessageType === "ShipStaticData" || msg.MessageType === "AidsToNavigationReport") {
+          const innerMsg = msg.Message[msg.MessageType];
+          const shipName = (msg.MessageType === "ShipStaticData" ? msg.Message.ShipStaticData?.Name : msg.MetaData?.ShipName)?.trim();
+
           updatedBoats.push({
             ...msg,
             MetaData: { ...msg.MetaData, ShipName: shipName || `Vessel ${mmsi}` },
-            lastUpdate: Date.now()
-          });
-        } else if (msg.MessageType === "ShipStaticData") {
-          const mmsi = msg.MetaData?.MMSI;
-          const shipName = msg.Message.ShipStaticData?.Name?.trim() || msg.MetaData?.ShipName?.trim();
-          updatedBoats.push({
-            MetaData: { ...msg.MetaData, ShipName: shipName || `Vessel ${mmsi}` },
-            Message: { PositionReport: { Latitude: 0, Longitude: 0, Sog: 0 } },
-            static: { ...msg.Message.ShipStaticData, Name: shipName },
+            static: msg.MessageType === "ShipStaticData" ? { ...msg.Message.ShipStaticData, Name: shipName } : null,
             lastUpdate: Date.now()
           });
         }
       }
 
-      // Periodically prune state if it exceeds 2000 vessels
-      // (This prevents memory bloat when panning around large areas)
-      if (updatedBoats.length > 2000) {
-        // Only prune once every 100 additions to avoid constant sorting
-        if (updatedBoats.length % 100 === 0) {
-          console.log(`[App] Pruning state... (${updatedBoats.length} -> 1500)`);
-          updatedBoats.sort((a, b) => (b.lastUpdate || 0) - (a.lastUpdate || 0));
-          return updatedBoats.slice(0, 1500);
-        }
-      }
-
-      if (updatedBoats.length !== prevBoats.length && updatedBoats.length % 50 === 0) {
-        console.log(`[App] 🚢 Boat count: ${updatedBoats.length} (${updatedBoats.length > prevBoats.length ? '+' : ''}${updatedBoats.length - prevBoats.length})`);
+      // Prune if exceeds 2000
+      if (updatedBoats.length > 2000 && updatedBoats.length % 100 === 0) {
+        updatedBoats.sort((a, b) => (b.lastUpdate || 0) - (a.lastUpdate || 0));
+        return updatedBoats.slice(0, 1500);
       }
       return updatedBoats;
     });
     setConnectionStatus('Connected (Live)');
   };
 
+  const handleCameraChange = useCallback((lat, lon) => {
+    setFocalPoint(prev => {
+      // Only update if moved significantly (more than 0.001 deg)
+      if (Math.abs(prev.lat - lat) < 0.001 && Math.abs(prev.lon - lon) < 0.001) return prev;
 
-  // 4. GPS Location - Auto-request on startup, fallback to default if denied
+      console.log(`[App] 🎯 Map Center: ${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+      // Reset radius expansion on new focal point
+      setTimeout(() => {
+        setSearchRadius(RADIUS_STEPS[0]);
+        setBoats([]);
+        setLocationSource('map');
+        setIsTrackingUser(false);
+      }, 0);
+      return { lat, lon, heading: 0 };
+    });
+  }, []);
+
   const requestLocationPermission = () => {
-    if (locationPermissionRequested) return; // Already requested
-
+    if (locationPermissionRequested) return;
     setLocationPermissionRequested(true);
     setConnectionStatus('Locating GPS...');
 
     LocationService.getCurrentLocation(
       (loc) => {
         setUserLocation(loc);
+        setFocalPoint(loc);
+        setLocationSource('gps');
         setConnectionStatus('GPS Located');
-
-        // Start watching location after successful initial request
         locationWatchId.current = LocationService.watchLocation((loc) => {
-          // Only update userLocation & trigger recenter if we are in tracking mode
-          setUserLocation(prev => {
-            if (isTrackingUserRef.current) {
-              return loc;
-            }
-            return prev;
-          });
+          if (isTrackingUserRef.current) {
+            setUserLocation(loc);
+            setLocationSource('gps');
+          }
         });
       },
       (err) => {
-        console.warn("[App] GPS unavailable, using default location:", err);
-        // Use default location if GPS fails
         setUserLocation(DEFAULT_LOCATION);
+        setFocalPoint(DEFAULT_LOCATION);
+        setLocationSource('default');
         setConnectionStatus('Using Default Location');
-        setLocationPermissionRequested(false); // Allow retry
       }
     );
   };
 
-  // Cleanup location watch on unmount
-  useEffect(() => {
-    return () => {
-      if (locationWatchId.current) navigator.geolocation.clearWatch(locationWatchId.current);
-    };
-  }, []);
-
-
   const handleRecenter = () => {
-    // If location permission not yet requested, request it
     if (!locationPermissionRequested) {
       requestLocationPermission();
       return;
     }
-
-    setConnectionStatus('Locating GPS...');
-    setIsTrackingUser(true); // Re-enable tracking
-    LocationService.getCurrentLocation(
-      (loc) => { setUserLocation(loc); setRecenterTrigger(Date.now()); },
-      (err) => {
-        console.error(err);
-        setConnectionStatus('GPS Failed. Try Search.');
-      }
-    );
+    setIsTrackingUser(true);
+    LocationService.getCurrentLocation((loc) => {
+      setUserLocation(loc);
+      setFocalPoint(loc);
+      setLocationSource('gps');
+      setRecenterTrigger(Date.now());
+      setSearchRadius(RADIUS_STEPS[0]);
+      setBoats([]);
+    });
   };
 
   const handleSearch = async (query) => {
@@ -255,37 +240,37 @@ function App() {
       const data = await response.json();
       if (data && data.length > 0) {
         const result = data[0];
-        const newLoc = {
-          lat: parseFloat(result.lat),
-          lon: parseFloat(result.lon),
-          heading: 0
-        };
-
-        setBoats([]); // Clear previous boats
-        setIsTrackingUser(false); // Stop tracking GPS after search
+        const newLoc = { lat: parseFloat(result.lat), lon: parseFloat(result.lon), heading: 0 };
+        setBoats([]);
+        setSearchRadius(RADIUS_STEPS[0]);
+        setIsTrackingUser(false);
         setUserLocation(newLoc);
+        setFocalPoint(newLoc);
+        setLocationSource('search');
         setRecenterTrigger(Date.now());
         setConnectionStatus(`Arrived: ${result.name || query}`);
-
-        // If in sim mode, this will trigger the effect to restart sim at new loc
-        // If in live mode, this will trigger effect to update bbox
       } else {
         setConnectionStatus(`Location '${query}' not found.`);
       }
-    } catch (e) {
-      console.error(e);
-      setConnectionStatus('Search Failed.');
-    }
+    } catch (e) { setConnectionStatus('Search Failed.'); }
   };
 
   return (
     <>
       <GlobeViewer
         userLocation={userLocation}
+        locationSource={locationSource}
         boats={boats}
         selectedBoat={selectedBoat}
         onSelectBoat={setSelectedBoat}
-        onLocationUpdate={setUserLocation}
+        onLocationUpdate={(loc) => {
+          setUserLocation(loc);
+          setFocalPoint(loc);
+          setLocationSource('gps');
+          setSearchRadius(RADIUS_STEPS[0]);
+          setBoats([]);
+        }}
+        onCameraChange={handleCameraChange}
         recenterTrigger={recenterTrigger}
         enabledVesselTypes={enabledVesselTypes}
         showLabels={showLabels}
@@ -293,6 +278,7 @@ function App() {
       <AppOverlay
         connectionStatus={connectionStatus}
         boatCount={boats.length}
+        searchRadius={searchRadius}
         onRecenter={handleRecenter}
         onSearch={handleSearch}
         locationPermissionRequested={locationPermissionRequested}

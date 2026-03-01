@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch, locationPermissionRequested, onRequestLocation, enabledVesselTypes, onToggleVesselType, showLabels, onToggleLabels }) => {
+const AppOverlay = ({ connectionStatus, boatCount, searchRadius = 1, onRecenter, onSearch, locationPermissionRequested, onRequestLocation, enabledVesselTypes, onToggleVesselType, showLabels, onToggleLabels }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showApiDetails, setShowApiDetails] = useState(false);
     const [showLegend, setShowLegend] = useState(true);
@@ -308,8 +308,9 @@ const AppOverlay = ({ connectionStatus, boatCount, onRecenter, onSearch, locatio
                             </div>
                             <span style={styles.statusText}>API</span>
                             <span style={{ color: 'rgba(255,255,255,0.3)', margin: '0 4px' }}>|</span>
-                            {/* Styled Vessels text to match API */}
                             <span style={{ ...styles.statusText, fontWeight: '600' }}>{boatCount} Vessels</span>
+                            <span style={{ color: 'rgba(255,255,255,0.3)', margin: '0 4px' }}>|</span>
+                            <span style={{ ...styles.statusText, fontWeight: '600' }}>{searchRadius} NM</span>
 
                             {/* Retry button icon if failed */}
                             {(connectionStatus.includes('Failed') || connectionStatus.includes('Dropped') || connectionStatus.includes('Unreachable') || connectionStatus.includes('Error')) && (

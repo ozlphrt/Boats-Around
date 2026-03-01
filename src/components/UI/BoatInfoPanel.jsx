@@ -62,17 +62,21 @@ const BoatInfoPanel = ({ boat, onClose }) => {
         }
     };
 
+    const innerMsg = boat.Message ? boat.Message[boat.MessageType] : null;
+
     const mmsi = boat.MetaData?.MMSI || boat.static?.Mmsi || 'Unknown';
     const name = boat.MetaData?.ShipName || boat.static?.Name || `Unknown Vessel (${mmsi})`;
     const typeCode = boat.static?.Type;
     const type = typeCode ? getVesselDescription(typeCode) : 'Unknown';
     const destination = boat.static?.Destination || 'Unknown';
-    const sog = boat.Message?.PositionReport?.Sog !== undefined ? `${boat.Message.PositionReport.Sog} kn` : '-';
-    const cog = boat.Message?.PositionReport?.Cog !== undefined ? `${boat.Message.PositionReport.Cog}°` : '-';
-    const lat = boat.Message?.PositionReport?.Latitude?.toFixed(4) || '-';
-    const lon = boat.Message?.PositionReport?.Longitude?.toFixed(4) || '-';
-    const status = boat.Message?.PositionReport?.NavigationalStatus !== undefined
-        ? getNavigationalStatus(boat.Message.PositionReport.NavigationalStatus)
+
+    // Generic extraction from whatever position/nav msg we have
+    const sog = innerMsg?.Sog !== undefined ? `${innerMsg.Sog} kn` : '-';
+    const cog = innerMsg?.Cog !== undefined ? `${innerMsg.Cog}°` : '-';
+    const lat = innerMsg?.Latitude?.toFixed(4) || '-';
+    const lon = innerMsg?.Longitude?.toFixed(4) || '-';
+    const status = innerMsg?.NavigationalStatus !== undefined
+        ? getNavigationalStatus(innerMsg.NavigationalStatus)
         : 'Unknown';
 
     return (

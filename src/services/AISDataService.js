@@ -17,7 +17,7 @@ export class AISDataService {
 
         // Throttling for subscription updates (to avoid 4003 Too Many Requests)
         this.lastSubscriptionTime = 0;
-        this.subscriptionThrottleMs = 2000; // 2 seconds between updates
+        this.subscriptionThrottleMs = 15000; // 15 seconds to strictly prevent 4003 rate limit
         this.pendingSubscriptionTimer = null;
     }
 
@@ -113,6 +113,10 @@ export class AISDataService {
                     console.error('[AIS] ❌ Error from AISStream:', response.error);
                     if (this.onStatusChange) {
                         this.onStatusChange(`Error: ${response.error}`);
+                    }
+                    if (response.error.includes("Too Many Subscription Requests")) {
+                        // Heavily punish reconnect time if we are rate limited
+                        this.reconnectAttempts = Math.max(this.reconnectAttempts, 4); // Force at least 16s backoff
                     }
                 } else {
                     console.log('[AIS] Received message:', response.MessageType || 'Unknown');
@@ -256,7 +260,16 @@ export class AISDataService {
                     [boundingBox.north, boundingBox.east]
                 ]
             ],
-            FilterMessageTypes: ["PositionReport", "ShipStaticData"]
+            FilterMessageTypes: [
+                "PositionReport",
+                "StandardClassBPositionReport",
+                "ExtendedClassBPositionReport",
+                "MultiSlotClassBPositionReport",
+                "ShipStaticData",
+                "AidsToNavigationReport",
+                "BaseStationReport",
+                "StaticDataReport"
+            ]
         };
 
         console.log("[AIS] Sending/Updating Subscription...");
